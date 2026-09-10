@@ -3,7 +3,7 @@ import streamlit as st
 
 #Carregar os datasets tratados para executar a análise descritiva
 
-#Preparar as visiualizações
+#Preparar as visualizações
 
 #Criar a interface no Streamlit
 
