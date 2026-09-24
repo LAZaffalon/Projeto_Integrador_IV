@@ -15,11 +15,135 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("📊 Dashboard de Performance Escolar")
-st.caption("Análise descritiva das turmas de 2º e 5º ano")
+st.markdown(
+    """
+    <style>
+        .stApp {
+            background: linear-gradient(180deg, #f4f7ff 0%, #eef4ff 100%);
+        }
+        .main .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+        }
+        div[data-testid="stMetric"] {
+            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid #dfe8ff;
+            border-radius: 18px;
+            padding: 1rem 1.25rem;
+            box-shadow: 0 8px 20px rgba(46, 83, 184, 0.08);
+        }
+        .app-header {
+            background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%);
+            border-radius: 20px;
+            padding: 1.5rem 1.75rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 10px 28px rgba(29, 78, 216, 0.18);
+        }
+        .app-header h1 {
+            color: white !important;
+            margin: 0;
+            font-size: 2.2rem;
+            letter-spacing: -0.04em;
+        }
+        .app-header p {
+            color: rgba(255,255,255,0.8);
+            margin: 0.5rem 0 0 0;
+            font-size: 1rem;
+        }
+        .badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.12);
+            color: #ffffff;
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 999px;
+            padding: 0.35rem 0.7rem;
+            font-size: 0.76rem;
+            font-weight: 600;
+            margin-bottom: 0.7rem;
+        }
+        [data-testid="stSidebar"] {
+            background: rgba(15, 23, 42, 0.03);
+        }
+        [data-testid="stMultiSelect"] {
+            background: rgba(255,255,255,0.9);
+            border: 1px solid #dfe8ff;
+            border-radius: 14px;
+            padding: 0.2rem 0.45rem;
+            box-shadow: 0 8px 18px rgba(99, 102, 241, 0.07);
+        }
+        div[data-baseweb="tag"] {
+            background: linear-gradient(135deg, #ff7a59 0%, #ff5f6d 100%);
+            border: none;
+            border-radius: 999px;
+            color: white;
+            padding: 0.2rem 0.5rem;
+            margin: 0.15rem;
+            box-shadow: 0 4px 10px rgba(255, 95, 109, 0.18);
+        }
+        div[data-baseweb="tag"] span {
+            color: white !important;
+            font-weight: 600;
+        }
+        div[data-baseweb="tag"] button {
+            color: white !important;
+            opacity: 0.9;
+        }
+        .stTabs [role="tablist"] {
+            gap: 0.5rem;
+        }
+        .stTabs [role="tab"] {
+            height: 42px;
+            border-radius: 10px;
+            background: rgba(148, 163, 184, 0.08);
+            color: #334155;
+            font-weight: 600;
+        }
+        .stTabs [role="tab"][aria-selected="true"] {
+            background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+            color: white;
+        }
+        [data-testid="stDataFrame"] {
+            border-radius: 14px;
+            overflow: hidden;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 ensure_database()
 lista_turmas = list_turmas()
+
+anos_disponiveis = []
+for turma in lista_turmas:
+    match = str(turma).strip()
+    if "º" in match and "Ano" in match:
+        numero = match.split("º", 1)[0].strip()
+        if numero.isdigit():
+            anos_disponiveis.append(int(numero))
+
+anos_disponiveis = sorted(set(anos_disponiveis))
+
+if len(anos_disponiveis) == 0:
+    periodo_descritivo = "turmas disponíveis"
+elif len(anos_disponiveis) == 1:
+    periodo_descritivo = f"{anos_disponiveis[0]}º ano"
+elif len(anos_disponiveis) == 2:
+    periodo_descritivo = f"{anos_disponiveis[0]}º e {anos_disponiveis[1]}º ano"
+else:
+    anos_texto = ", ".join(f"{ano}º" for ano in anos_disponiveis[:-1])
+    periodo_descritivo = f"{anos_texto} e {anos_disponiveis[-1]}º anos"
+
+st.markdown(
+    f"""
+    <div class="app-header">
+        <div class="badge">Dashboard Educacional</div>
+        <h1>📊 Performance Escolar</h1>
+        <p>Análise descritiva das turmas do {periodo_descritivo} com visão integrada dos indicadores.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 serie_turma = st.selectbox("Selecione a turma", lista_turmas)
 df = get_turma_data(serie_turma)
@@ -30,6 +154,7 @@ if df.empty:
 
 with st.sidebar:
     st.header("Filtros")
+    st.markdown("<div style='margin-bottom: 1rem; color: #475569;'>Ajuste os indicadores para comparar o desempenho da turma.</div>", unsafe_allow_html=True)
     nivel_filtro = st.multiselect(
         "Nível de leitura",
         sorted(df["nivel_numerico"].dropna().unique().tolist()),
@@ -42,7 +167,7 @@ with st.sidebar:
         df_filtrado = df.copy()
 
     st.markdown("---")
-    st.write("Fonte dos dados: banco SQLite local do projeto.")
+    st.info("Os dados são carregados a partir do banco SQLite local do projeto.", icon="🗄️")
 
 media_engajamento = df_filtrado["engajamento_leitura"].mean()
 media_compreensao = df_filtrado["compreensao_textual"].mean()
@@ -80,17 +205,22 @@ with tab1:
         st.pyplot(fig)
 
     st.markdown("### Resumo da turma")
-    st.dataframe(df_filtrado[[
-        "nome_do_estudante",
-        "nivel",
-        "nivel_numerico",
-        "total_de_leituras",
-        "tempo_de_leitura_minutos",
-        "questoes_respondidas",
-        "questoes_aprovadas",
-        "compreensao_textual",
-        "engajamento_leitura",
-    ]].head(15), use_container_width=True)
+    st.dataframe(
+        df_filtrado[
+            [
+                "nome_do_estudante",
+                "nivel",
+                "nivel_numerico",
+                "total_de_leituras",
+                "tempo_de_leitura_minutos",
+                "questoes_respondidas",
+                "questoes_aprovadas",
+                "compreensao_textual",
+                "engajamento_leitura",
+            ]
+        ].head(15),
+        use_container_width=True,
+    )
 
 with tab2:
     st.markdown("### Ranking dos alunos")
@@ -99,12 +229,25 @@ with tab2:
     ).reset_index(drop=True)
     ranking["posicao"] = range(1, len(ranking) + 1)
     st.dataframe(
-        ranking[["posicao", "nome_do_estudante", "nivel", "engajamento_leitura", "compreensao_textual", "total_de_leituras"]],
+        ranking[
+            [
+                "posicao",
+                "nome_do_estudante",
+                "nivel",
+                "engajamento_leitura",
+                "compreensao_textual",
+                "total_de_leituras",
+            ]
+        ],
         use_container_width=True,
     )
 
     fig, ax = plt.subplots(figsize=(10, 5))
-    ax.barh(ranking["nome_do_estudante"].head(10)[::-1], ranking["engajamento_leitura"].head(10)[::-1], color="#F58518")
+    ax.barh(
+        ranking["nome_do_estudante"].head(10)[::-1],
+        ranking["engajamento_leitura"].head(10)[::-1],
+        color="#F58518",
+    )
     ax.set_title("Top 10 alunos por engajamento")
     ax.set_xlabel("Engajamento (%)")
     ax.set_ylabel("Aluno")
@@ -138,7 +281,17 @@ with tab3:
         st.pyplot(fig)
 
     st.markdown("### Estatísticas resumidas")
-    st.write(df_filtrado[["total_de_leituras", "tempo_de_leitura_minutos", "questoes_respondidas", "compreensao_textual", "engajamento_leitura"]].describe().round(2))
+    st.write(
+        df_filtrado[
+            [
+                "total_de_leituras",
+                "tempo_de_leitura_minutos",
+                "questoes_respondidas",
+                "compreensao_textual",
+                "engajamento_leitura",
+            ]
+        ].describe().round(2)
+    )
 
 st.markdown("---")
 st.caption("Aplicativo desenvolvido para análise educacional com Streamlit.")

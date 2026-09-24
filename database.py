@@ -100,7 +100,9 @@ def _normalizar_dataframe(df: pd.DataFrame, serie: str) -> pd.DataFrame:
                 dados = dados.rename(columns={nome: alvo})
                 break
 
-    if "nome_do_estudante" not in dados.columns:
+    if "nome_do_estudante" in dados.columns:
+        dados["nome_do_estudante"] = [f"Aluno_{i:02d}" for i in range(1, len(dados) + 1)]
+    else:
         dados["nome_do_estudante"] = [f"Aluno_{i:02d}" for i in range(1, len(dados) + 1)]
 
     if "turma" not in dados.columns:
