@@ -1,0 +1,11 @@
+nome_do_estudante,leituras_em_andamento,leituras_concluidas,total_de_leituras,tempo_de_leitura_minutos,questoes_respondidas,questoes_aprovadas,nivel,livros_escutados,tempo_de_escuta,tempo_de_escuta_minutos,nivel_numerico,compreensao_textual,engajamento_leitura,turma,periodo
+Aluno_01,18,92,110,640.00,540,310,N,0,00s,0,3,83.64,57.41,A,manha
+Aluno_02,22,101,123,700.25,610,340,N,0,00s,0,3,82.11,55.74,A,manha
+Aluno_03,17,96,113,620.10,520,290,N,0,00s,0,3,84.96,55.77,A,manha
+Aluno_04,19,94,113,650.00,560,300,N,0,00s,0,3,83.19,53.57,A,manha
+Aluno_05,24,110,134,720.80,680,360,N,0,00s,0,3,82.09,52.94,A,manha
+Aluno_06,20,98,118,670.50,590,335,N,0,00s,0,3,83.05,56.78,A,manha
+Aluno_07,15,87,102,610.25,480,270,N,0,00s,0,3,85.29,56.25,A,manha
+Aluno_08,21,100,121,695.40,620,345,N,0,00s,0,3,82.64,55.65,A,manha
+Aluno_09,18,95,113,628.70,530,310,N,0,00s,0,3,84.07,58.49,A,manha
+Aluno_10,23,108,131,710.60,645,355,N,0,00s,0,3,82.44,55.04,A,manha

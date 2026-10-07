@@ -1,0 +1,68 @@
+BANCO DE DADOS DO PROJETO
+========================
+
+1. Finalidade
+-------------
+O projeto usa SQLite para organizar e consultar os dados escolares exibidos na
+dashboard Streamlit. O arquivo do banco local chama-se educacao.db e fica na
+raiz do projeto.
+
+2. Fluxo dos dados
+------------------
+1) Os arquivos de dataset_clear e uploads/ são localizados pelo módulo
+   database.py. dataset_raw/ guarda arquivos de origem, mas não é lida pela
+   dashboard.
+2) Arquivos CSV são a fonte preferencial por série. Um arquivo Excel (.xlsx ou
+   .xls) é usado como alternativa quando não existe CSV equivalente para aquela
+   série.
+3) Os dados são normalizados para padronizar nomes de colunas, métricas e
+   identificação da série. Os nomes dos estudantes são substituídos por IDs
+   como Aluno_01.
+4) Os dados combinados são gravados na tabela alunos do SQLite.
+5) A dashboard consulta essa tabela para listar séries e exibir indicadores.
+
+3. Importação pelo dashboard
+----------------------------
+O usuário envia um CSV pelo painel lateral. O arquivo é validado e salvo em
+uploads/ para permanecer disponível após a sessão. Na atualização do banco,
+esse arquivo é normalizado e seus registros passam a integrar a tabela alunos.
+
+Os CSVs enviados podem ser excluídos pela própria dashboard. Como o banco é
+reconstruído a partir dos arquivos existentes, os registros exclusivos do
+arquivo excluído deixam de aparecer após a próxima reconstrução. Se houver outra
+fonte elegível para a mesma série, ela continuará alimentando a tabela conforme
+a regra de preferência por CSV.
+
+4. Atualização e persistência
+----------------------------
+A função ensure_database() lê as fontes de dados e grava a tabela alunos com
+if_exists="replace". Ela é chamada pelas funções de consulta da aplicação.
+Assim, o SQLite é um banco real usado para consulta, mas sua tabela é uma
+representação reconstruível dos arquivos CSV/Excel disponíveis.
+
+Consequência: não se deve usar alterações manuais diretamente em educacao.db
+como fonte permanente. Elas podem ser sobrescritas na próxima reconstrução. A
+fonte persistente dos dados importados pelo usuário é o CSV em uploads/.
+
+5. Estrutura da tabela
+---------------------
+A tabela alunos é criada a partir das colunas encontradas nos arquivos e
+normalizadas pelo módulo database.py. Entre as colunas usadas pela dashboard
+estão:
+
+- serie, turma e periodo
+- nome_do_estudante e nivel
+- leituras_em_andamento, leituras_concluidas e total_de_leituras
+- tempo_de_leitura_minutos e tempo_de_escuta_minutos
+- questoes_respondidas e questoes_aprovadas
+- compreensao_textual e engajamento_leitura
+
+6. Testes
+---------
+Para executar os testes de banco de dados a partir da raiz do projeto:
+
+    py -m unittest -q tests.test_database
+
+O conjunto de testes verifica carregamento de séries, normalização, validação
+de CSV, preferência por CSV sobre Excel equivalente e gerenciamento dos
+arquivos enviados.

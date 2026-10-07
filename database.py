@@ -1,5 +1,6 @@
 import re
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -7,6 +8,7 @@ import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent
 DATASET_DIR = BASE_DIR / "dataset_clear"
+UPLOADS_DIR = BASE_DIR / "uploads"
 DB_PATH = BASE_DIR / "educacao.db"
 
 NUMERIC_COLUMNS = [
@@ -81,13 +83,34 @@ def _read_dataset(file_path: Path) -> pd.DataFrame:
 
 
 def _discover_dataset_files() -> list[Path]:
-    if not DATASET_DIR.exists():
-        return []
     extensoes = {".csv", ".xlsx", ".xls"}
-    return sorted(
-        [arquivo for arquivo in DATASET_DIR.iterdir() if arquivo.is_file() and arquivo.suffix.lower() in extensoes],
-        key=lambda item: item.name.lower(),
-    )
+    pastas = [DATASET_DIR]
+    if UPLOADS_DIR.exists():
+        pastas.append(UPLOADS_DIR)
+
+    arquivos = []
+    for pasta in pastas:
+        if not pasta.exists():
+            continue
+        arquivos.extend(
+            arquivo
+            for arquivo in pasta.iterdir()
+            if arquivo.is_file() and arquivo.suffix.lower() in extensoes
+        )
+
+    series_com_csv = {
+        _infer_serie_name(arquivo)
+        for arquivo in arquivos
+        if arquivo.suffix.lower() == ".csv"
+    }
+    arquivos_preferenciais = [
+        arquivo
+        for arquivo in arquivos
+        if arquivo.suffix.lower() == ".csv"
+        or _infer_serie_name(arquivo) not in series_com_csv
+    ]
+
+    return sorted(arquivos_preferenciais, key=lambda item: item.name.lower())
 
 
 def _normalizar_dataframe(df: pd.DataFrame, serie: str) -> pd.DataFrame:
@@ -169,6 +192,160 @@ def _normalizar_dataframe(df: pd.DataFrame, serie: str) -> pd.DataFrame:
 
     dados["serie"] = serie
     return dados
+
+
+def _normalizar_nome_coluna(coluna: str) -> str:
+    texto = str(coluna).strip().lower()
+    texto = texto.replace("_", " ")
+    texto = texto.replace("-", " ")
+    texto = texto.replace("/", " ")
+    texto = "".join(
+        ch for ch in texto if ch.isalnum() or ch.isspace()
+    ).strip()
+    return " ".join(texto.split())
+
+
+def validate_uploaded_csv(dataframe) -> tuple[bool, str, pd.DataFrame]:
+    """Valida um CSV do usuário final e retorna o DataFrame padronizado."""
+    if dataframe is None:
+        return False, "Nenhum arquivo foi enviado.", pd.DataFrame()
+
+    if hasattr(dataframe, "read"):
+        try:
+            dataframe.seek(0)
+            df = pd.read_csv(dataframe)
+        except Exception as exc:  # pragma: no cover - dependente do arquivo
+            return False, f"Não foi possível ler o arquivo: {exc}", pd.DataFrame()
+    elif isinstance(dataframe, (str, Path)):
+        try:
+            df = pd.read_csv(dataframe)
+        except Exception as exc:  # pragma: no cover - dependente do arquivo
+            return False, f"Não foi possível ler o arquivo: {exc}", pd.DataFrame()
+    elif isinstance(dataframe, dict):
+        df = pd.DataFrame(dataframe)
+    else:
+        df = dataframe.copy()
+
+    if df.empty:
+        return False, "O arquivo enviado está vazio.", df
+
+    colunas = {_normalizar_nome_coluna(col) for col in df.columns}
+    alias_map = {
+        "nome_do_estudante": ["nome do estudante", "nome estudante", "nome do aluno", "nome doaluno", "nome_do_estudante"],
+        "nivel": ["nivel", "nível", "nivel de leitura", "nível de leitura"],
+        "total_de_leituras": ["total de leituras", "total leituras", "total_de_leituras"],
+        "questoes_respondidas": ["questoes respondidas", "questões respondidas", "questoes_respondidas", "questoes respondidas"],
+        "questoes_aprovadas": ["questoes aprovadas", "questões aprovadas", "questoes_aprovadas"],
+    }
+
+    faltando = []
+    for chave, aliases in alias_map.items():
+        if not any(alias in colunas for alias in aliases):
+            faltando.append(chave)
+
+    if faltando:
+        return False, (
+            "Arquivo inválido: faltando colunas obrigatórias para a análise: "
+            + ", ".join(faltando)
+        ), df
+
+    df_normalizado = df.copy()
+    df_normalizado.columns = [_normalizar_nome_coluna(col) for col in df.columns]
+    df_normalizado = df_normalizado.rename(columns={
+        "nome do estudante": "nome_do_estudante",
+        "nome estudante": "nome_do_estudante",
+        "nome do aluno": "nome_do_estudante",
+        "nome doaluno": "nome_do_estudante",
+        "nivel": "nivel",
+        "nivel de leitura": "nivel",
+        "nível": "nivel",
+        "nível de leitura": "nivel",
+        "total de leituras": "total_de_leituras",
+        "total leituras": "total_de_leituras",
+        "questoes respondidas": "questoes_respondidas",
+        "questões respondidas": "questoes_respondidas",
+        "questoes aprovadas": "questoes_aprovadas",
+        "questões aprovadas": "questoes_aprovadas",
+    })
+
+    normalizado = _normalizar_dataframe(df_normalizado, "CSV importado")
+    return True, "Arquivo validado e pronto para uso na dashboard.", normalizado
+
+
+def _canonical_upload_name(raw_name: str | Path) -> str:
+    """Remove variações de timestamp repetidas e mantém um nome estável por série."""
+    nome = Path(str(raw_name)).stem or "csv_importado"
+    nome = re.sub(r"_\d{8}_\d{6}$", "", nome)
+    nome = re.sub(r"[^A-Za-z0-9_-]+", "_", nome).strip("_") or "csv_importado"
+    return nome
+
+
+def save_uploaded_csv(file_obj, source_name: str | None = None) -> str:
+    """Salva um CSV do usuário em uma pasta dedicada para persistência local."""
+    UPLOADS_DIR.mkdir(exist_ok=True)
+
+    if hasattr(file_obj, "seek"):
+        file_obj.seek(0)
+
+    if hasattr(file_obj, "read"):
+        df = pd.read_csv(file_obj)
+        raw_name = getattr(file_obj, "name", source_name or "csv_importado")
+    else:
+        df = file_obj.copy() if isinstance(file_obj, pd.DataFrame) else pd.DataFrame(file_obj)
+        raw_name = source_name or "csv_importado"
+
+    nome_base = _canonical_upload_name(raw_name)
+    destino = UPLOADS_DIR / f"{nome_base}.csv"
+
+    for arquivo in list_uploaded_files():
+        if arquivo != destino and _canonical_upload_name(arquivo.name) == nome_base:
+            arquivo.unlink(missing_ok=True)
+
+    if destino.exists():
+        destino.unlink()
+    df.to_csv(destino, index=False)
+    return str(destino)
+
+
+def list_uploaded_files() -> list[Path]:
+    """Lista apenas os CSVs salvos em versões deduplicadas por série."""
+    UPLOADS_DIR.mkdir(exist_ok=True)
+    arquivos = sorted(UPLOADS_DIR.glob("*.csv"), key=lambda item: item.name.lower(), reverse=True)
+    vistos = set()
+    resultado = []
+
+    for arquivo in arquivos:
+        chave = _canonical_upload_name(arquivo.name)
+        if chave in vistos:
+            arquivo.unlink(missing_ok=True)
+            continue
+        vistos.add(chave)
+        resultado.append(arquivo)
+
+    return sorted(resultado, key=lambda item: item.name.lower())
+
+
+def delete_uploaded_csv(file_name: str | Path) -> bool:
+    """Remove um CSV da pasta de uploads."""
+    UPLOADS_DIR.mkdir(exist_ok=True)
+
+    candidate = Path(file_name)
+    if not candidate.is_absolute():
+        candidate = UPLOADS_DIR / candidate.name
+    if not candidate.exists() or not candidate.is_file():
+        return False
+
+    candidate.unlink()
+    return True
+
+
+def delete_all_uploaded_csvs() -> int:
+    """Remove todos os CSVs de uploads e retorna a quantidade removida."""
+    UPLOADS_DIR.mkdir(exist_ok=True)
+    arquivos = list_uploaded_files()
+    for arquivo in arquivos:
+        arquivo.unlink(missing_ok=True)
+    return len(arquivos)
 
 
 def ensure_database() -> str:

@@ -4,7 +4,17 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 
-from database import ensure_database, get_turma_data, list_turmas
+from database import (
+    _infer_serie_name,
+    delete_all_uploaded_csvs,
+    delete_uploaded_csv,
+    ensure_database,
+    get_turma_data,
+    list_turmas,
+    list_uploaded_files,
+    save_uploaded_csv,
+    validate_uploaded_csv,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -255,8 +265,129 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+with st.sidebar:
+    st.subheader("Importar dados")
+    uploaded_file = st.file_uploader(
+        "Carregar CSV da escola",
+        type=["csv"],
+        help="Faça upload de um CSV exportado pelo sistema da escola. A validação é automática e não exige programação.",
+    )
+
+    if uploaded_file is not None:
+        try:
+            uploaded_df = pd.read_csv(uploaded_file)
+        except Exception as exc:
+            st.error(f"Não foi possível ler o arquivo: {exc}")
+            uploaded_df = None
+        else:
+            valid, message, normalized_df = validate_uploaded_csv(uploaded_df)
+            if valid:
+                caminho_arquivo = save_uploaded_csv(uploaded_file, uploaded_file.name)
+                serie_importada = _infer_serie_name(Path(uploaded_file.name))
+                st.session_state["uploaded_dataframe"] = normalized_df
+                st.session_state["uploaded_name"] = serie_importada
+                st.session_state["uploaded_path"] = caminho_arquivo
+                st.success(f"{message} Arquivo salvo para uso futuro no projeto.")
+                st.caption(f"Arquivo carregado: {uploaded_file.name}")
+                st.dataframe(normalized_df.head(), width="stretch")
+            else:
+                st.error(message)
+                st.info("Use colunas como: nome do estudante, nível, total de leituras, questões respondidas, questões aprovadas.")
+                st.session_state.pop("uploaded_dataframe", None)
+                st.session_state.pop("uploaded_name", None)
+                st.session_state.pop("uploaded_path", None)
+
+    if "uploaded_name" in st.session_state and "uploaded_dataframe" in st.session_state:
+        st.caption(f"Dados ativos: {st.session_state['uploaded_name']}")
+
+    st.markdown("---")
+    st.markdown('<div class="modern-panel">', unsafe_allow_html=True)
+    st.subheader("Arquivos salvos")
+    arquivos_salvos = list_uploaded_files()
+    if arquivos_salvos:
+        st.caption(f"{len(arquivos_salvos)} arquivo(s) em armazenamento local")
+        mostrar_gerenciamento = st.checkbox(
+            "Gerenciar arquivos salvos",
+            value=False,
+            key="checkbox_gerenciar_arquivos",
+            help="Ative esta opção para visualizar os arquivos salvos e confirmar a exclusão antes de remover qualquer CSV.",
+        )
+
+        if mostrar_gerenciamento:
+            nome_arquivo_para_excluir = st.selectbox(
+                "Selecione o CSV para excluir",
+                [arquivo.name for arquivo in arquivos_salvos],
+                key="arquivo_para_excluir",
+            )
+
+            st.warning("A exclusão só acontece após confirmação explícita.")
+
+            col_excluir_arquivo, col_excluir_todos = st.columns(2)
+            with col_excluir_arquivo:
+                if st.button("Excluir selecionado", width="stretch", type="secondary"):
+                    st.session_state["confirmar_exclusao_selecionado"] = True
+                    st.session_state["confirmar_exclusao_todos"] = False
+            with col_excluir_todos:
+                if st.button("Excluir todos", width="stretch", type="secondary"):
+                    st.session_state["confirmar_exclusao_selecionado"] = False
+                    st.session_state["confirmar_exclusao_todos"] = True
+
+            if st.session_state.get("confirmar_exclusao_selecionado"):
+                st.warning(f"Confirmar exclusão de: {nome_arquivo_para_excluir}")
+                col_cancelar, col_confirmar = st.columns(2)
+                with col_cancelar:
+                    if st.button("Cancelar", width="stretch", type="tertiary"):
+                        st.session_state["confirmar_exclusao_selecionado"] = False
+                        st.rerun()
+                with col_confirmar:
+                    if st.button("Confirmar exclusão", width="stretch", type="primary"):
+                        if delete_uploaded_csv(nome_arquivo_para_excluir):
+                            st.session_state.pop("uploaded_dataframe", None)
+                            st.session_state.pop("uploaded_name", None)
+                            st.session_state.pop("uploaded_path", None)
+                            st.session_state["confirmar_exclusao_selecionado"] = False
+                            st.success(f"Arquivo excluído: {nome_arquivo_para_excluir}")
+                            st.rerun()
+                        else:
+                            st.warning("Não foi possível excluir o arquivo selecionado.")
+                            st.session_state["confirmar_exclusao_selecionado"] = False
+
+            if st.session_state.get("confirmar_exclusao_todos"):
+                st.warning("Confirmar exclusão de todos os arquivos salvos?")
+                col_cancelar_todos, col_confirmar_todos = st.columns(2)
+                with col_cancelar_todos:
+                    if st.button("Cancelar", width="stretch", key="botao_cancelar_exclusao_todos", type="tertiary"):
+                        st.session_state["confirmar_exclusao_todos"] = False
+                        st.rerun()
+                with col_confirmar_todos:
+                    if st.button("Confirmar exclusão de todos", width="stretch", key="botao_confirmar_exclusao_todos", type="primary"):
+                        qtde = delete_all_uploaded_csvs()
+                        st.session_state.pop("uploaded_dataframe", None)
+                        st.session_state.pop("uploaded_name", None)
+                        st.session_state.pop("uploaded_path", None)
+                        st.session_state["confirmar_exclusao_todos"] = False
+                        st.success(f"{qtde} arquivo(s) removido(s) da pasta de uploads.")
+                        st.rerun()
+    else:
+        st.caption("Nenhum arquivo importado foi salvo ainda.")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+lista_turmas = list_turmas()
+if "uploaded_name" in st.session_state and "uploaded_dataframe" in st.session_state:
+    uploaded_name = st.session_state["uploaded_name"]
+    if uploaded_name not in lista_turmas:
+        lista_turmas.append(uploaded_name)
+
 serie_turma = st.selectbox("Selecione a turma", lista_turmas)
-df = get_turma_data(serie_turma)
+if "uploaded_name" in st.session_state and "uploaded_dataframe" in st.session_state and serie_turma == st.session_state["uploaded_name"]:
+    df = st.session_state["uploaded_dataframe"].copy()
+else:
+    df = get_turma_data(serie_turma)
+
+if "uploaded_name" in st.session_state and "uploaded_dataframe" in st.session_state and serie_turma == st.session_state["uploaded_name"]:
+    df = st.session_state["uploaded_dataframe"].copy()
+    if "serie" not in df.columns:
+        df["serie"] = st.session_state["uploaded_name"]
 
 if df.empty:
     st.warning("Não foi possível carregar os dados da turma selecionada.")
@@ -434,7 +565,7 @@ else:
     risco_display["engajamento_leitura"] = risco_display["engajamento_leitura"].round(2)
     risco_display["compreensao_textual"] = risco_display["compreensao_textual"].round(2)
     risco_display["status"] = "Atenção"
-    st.dataframe(risco_display, use_container_width=True)
+    st.dataframe(risco_display, width="stretch")
     st.caption("Indicadores de risco calculados a partir de engajamento, compreensão e volume de leitura.")
 
 st.markdown("### Dados da turma")
@@ -457,7 +588,7 @@ for col in ["total_de_leituras", "tempo_de_leitura_minutos", "questoes_respondid
     if col in data_display.columns:
         data_display[col] = data_display[col].round(2)
 
-st.dataframe(data_display.head(15), use_container_width=True)
+st.dataframe(data_display.head(15), width="stretch")
 
 st.markdown("---")
 
@@ -480,7 +611,7 @@ with tab1:
     ].copy()
     ranking_display["engajamento_leitura"] = ranking_display["engajamento_leitura"].round(2)
     ranking_display["compreensao_textual"] = ranking_display["compreensao_textual"].round(2)
-    st.dataframe(ranking_display, use_container_width=True)
+    st.dataframe(ranking_display, width="stretch")
 
     fig, ax = plt.subplots(figsize=(10, 5))
     cores = ["#1f77b4" if value >= limiar_engajamento else "#d62728" for value in ranking["engajamento_leitura"].head(10)]
